@@ -12,7 +12,7 @@ interface ColorPickerProps {
 }
 
 export function ColorPicker({ selectedColor, onColorSelect, label = 'Color' }: ColorPickerProps) {
-  const [activePalette, setActivePalette] = useState<keyof typeof COLOR_PALETTES>('vibrant');
+  const [activePalette, setActivePalette] = useState<keyof typeof COLOR_PALETTES>('rich');
   const [customColor, setCustomColor] = useState(selectedColor || '#3b82f6');
 
   const handleCustomColorChange = (value: string) => {
@@ -50,9 +50,9 @@ export function ColorPicker({ selectedColor, onColorSelect, label = 'Color' }: C
       {/* Preset Palettes */}
       <Tabs value={activePalette} onValueChange={(value) => setActivePalette(value as keyof typeof COLOR_PALETTES)}>
         <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="vibrant" className="text-xs">Vibrant</TabsTrigger>
-          <TabsTrigger value="pastel" className="text-xs">Pastel</TabsTrigger>
-          <TabsTrigger value="muted" className="text-xs">Muted</TabsTrigger>
+          <TabsTrigger value="beachy" className="text-xs">Beachy</TabsTrigger>
+          <TabsTrigger value="pale" className="text-xs">Pale</TabsTrigger>
+          <TabsTrigger value="rich" className="text-xs">Rich</TabsTrigger>
           <TabsTrigger value="neutral" className="text-xs">Neutral</TabsTrigger>
         </TabsList>
         {Object.entries(COLOR_PALETTES).map(([paletteKey, colors]) => (
@@ -60,16 +60,15 @@ export function ColorPicker({ selectedColor, onColorSelect, label = 'Color' }: C
             <div className="grid grid-cols-8 gap-2">
               {colors.map((color) => (
                 <button
-                  key={color.value}
+                  key={color}
                   type="button"
                   className={`relative w-8 h-8 rounded-lg transition-transform hover:scale-110 ${
-                    selectedColor === color.value ? 'scale-110 ring-2 ring-offset-2 ring-gray-400' : ''
+                    selectedColor === color ? 'scale-110 ring-2 ring-offset-2 ring-gray-400' : ''
                   }`}
-                  style={{ backgroundColor: color.value }}
-                  onClick={() => onColorSelect(color.value)}
-                  title={color.name}
+                  style={{ backgroundColor: color }}
+                  onClick={() => onColorSelect(color)}
                 >
-                  {selectedColor === color.value && (
+                  {selectedColor === color && (
                     <Check className="w-4 h-4 absolute inset-0 m-auto text-white drop-shadow" />
                   )}
                 </button>

@@ -6,8 +6,9 @@ import { ColorPicker } from './ColorPicker';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
+import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Label } from './ui/label';
-import { DEFAULT_QUEUE_COLORS } from '../constants';
+import { DEFAULT_QUEUE_COLORS, DEFAULT_TASK_COLORS } from '../constants';
 
 export function QueueList() {
   const { state, store } = useStore();
@@ -17,10 +18,8 @@ export function QueueList() {
   const [selectedColor, setSelectedColor] = useState(DEFAULT_QUEUE_COLORS[0]);
   
   // Custom 6-color palette state
-  const [palette, setPalette] = useState<string[]>([
-    '#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#a855f7'
-  ]);
-  const [editingColorIndex, setEditingColorIndex] = useState<number>(0);
+  const [palette, setPalette] = useState<string[]>(DEFAULT_TASK_COLORS);
+  const [openPopoverIndex, setOpenPopoverIndex] = useState<number | null>(null);
 
   const mainQueues = store.getMainQueues();
 
@@ -78,51 +77,47 @@ export function QueueList() {
                 </div>
                 
                 <div className="pt-4 border-t border-gray-100">
-                  <Label className="mb-2 block">Queue Folder Icon Color</Label>
-                  <div className="grid grid-cols-8 gap-2 mt-2">
-                    {DEFAULT_QUEUE_COLORS.map((color) => (
-                      <button
-                        key={color}
-                        type="button"
-                        className={`w-8 h-8 rounded-full transition-transform ${
-                          selectedColor === color ? 'scale-110 ring-2 ring-offset-2 ring-gray-400' : ''
-                        }`}
-                        style={{ backgroundColor: color }}
-                        onClick={() => setSelectedColor(color)}
-                      />
-                    ))}
-                  </div>
+                  <ColorPicker
+                    selectedColor={selectedColor}
+                    onColorSelect={setSelectedColor}
+                    label="Queue Folder Icon Color"
+                  />
                 </div>
 
                 <div className="pt-4 border-t border-gray-100">
                   <Label className="mb-2 block">Task Palette (6 Colors)</Label>
                   <p className="text-xs text-gray-500 mb-3">Tasks in this queue will automatically cycle through these colors.</p>
                   
-                  <div className="flex gap-2 mb-4">
+                  <div className="flex gap-2">
                     {palette.map((color, index) => (
-                      <button
+                      <Popover
                         key={index}
-                        type="button"
-                        className={`w-10 h-10 rounded-md transition-transform border-2 ${
-                          editingColorIndex === index ? 'scale-110 border-gray-400 shadow-md ring-2 ring-offset-1 ring-gray-300' : 'border-transparent'
-                        }`}
-                        style={{ backgroundColor: color }}
-                        onClick={() => setEditingColorIndex(index)}
-                      />
+                        open={openPopoverIndex === index}
+                        onOpenChange={(open) => setOpenPopoverIndex(open ? index : null)}
+                      >
+                        <PopoverTrigger asChild>
+                          <button
+                            type="button"
+                            className={`w-10 h-10 rounded-md transition-transform border-2 ${
+                              openPopoverIndex === index ? 'scale-110 border-gray-400 shadow-md ring-2 ring-offset-1 ring-gray-300' : 'border-transparent'
+                            }`}
+                            style={{ backgroundColor: color }}
+                          />
+                        </PopoverTrigger>
+                        <PopoverContent className="w-72 p-3" side="bottom" align="start">
+                          <ColorPicker
+                            selectedColor={palette[index]}
+                            onColorSelect={(newColor) => {
+                              if (!newColor) return;
+                              const newPalette = [...palette];
+                              newPalette[index] = newColor;
+                              setPalette(newPalette);
+                            }}
+                            label={`Color ${index + 1}`}
+                          />
+                        </PopoverContent>
+                      </Popover>
                     ))}
-                  </div>
-                  
-                  <div className="bg-gray-50 p-3 rounded-lg border">
-                    <ColorPicker
-                      selectedColor={palette[editingColorIndex]}
-                      onColorSelect={(newColor) => {
-                        if (!newColor) return;
-                        const newPalette = [...palette];
-                        newPalette[editingColorIndex] = newColor;
-                        setPalette(newPalette);
-                      }}
-                      label={`Change Color ${editingColorIndex + 1}`}
-                    />
                   </div>
                 </div>
 
