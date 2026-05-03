@@ -20,6 +20,7 @@ export interface Queue {
   createdAt: string;
   ownerId?: string;
   isShared?: boolean;
+  sharedByEmail?: string;
 }
 
 export type MemberStatus = 'pending' | 'active';

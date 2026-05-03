@@ -42,6 +42,15 @@ class AppStore {
   private listeners: Set<() => void> = new Set();
   private realtimeCleanup: (() => void) | undefined;
 
+  private getAuthenticatedEmail() {
+    return (
+      this.state.user?.email ||
+      (this.state.user?.user_metadata?.email as string | undefined) ||
+      (this.state.user?.identities?.[0]?.identity_data?.email as string | undefined) ||
+      null
+    );
+  }
+
   async signOut() {
     this.realtimeCleanup?.();
     this.realtimeCleanup = undefined;
@@ -80,7 +89,7 @@ class AppStore {
 
     if (this.state.user) {
       await this.resolvePendingInvites();
-      this.fetchQueues();
+      await this.fetchQueues();
       this.realtimeCleanup = this.subscribeToRealtime();
     } else {
       const saved = localStorage.getItem('prioritize_local_data');
@@ -91,13 +100,13 @@ class AppStore {
       this.notify();
     }
 
-    supabase.auth.onAuthStateChange((_event, session) => {
+    supabase.auth.onAuthStateChange(async (_event, session) => {
       const newUser = session?.user ?? null;
       if (this.state.user?.id !== newUser?.id) {
         this.state.user = newUser;
         if (newUser) {
-          this.resolvePendingInvites();
-          this.fetchQueues();
+          await this.resolvePendingInvites();
+          await this.fetchQueues();
           this.realtimeCleanup = this.subscribeToRealtime();
         } else {
           this.realtimeCleanup?.();
@@ -113,10 +122,14 @@ class AppStore {
   }
 
   private async resolvePendingInvites() {
-    if (!this.state.user?.email) return;
+    const user = this.state.user;
+    if (!user) return;
+
+    const email = this.getAuthenticatedEmail();
+    if (!email) return;
     const { error } = await supabase.rpc('resolve_pending_invites', {
-      p_user_id: this.state.user.id,
-      p_email: this.state.user.email.toLowerCase(),
+      p_user_id: user.id,
+      p_email: email.toLowerCase(),
     });
     if (error) console.error('Error resolving invites:', error);
   }
@@ -127,6 +140,7 @@ class AppStore {
     const { error } = await supabase.from('queue_members').insert({
       queue_id: queueId,
       invited_by: this.state.user.id,
+      invited_by_email: this.getAuthenticatedEmail() ?? '',
       email: email.toLowerCase().trim(),
       role: 'editor',
       status: 'pending',
@@ -371,11 +385,44 @@ class AppStore {
     this.notify();
 
     try {
-      const { data: queuesData, error: queuesError } = await supabase
+      const { data: ownedQueuesData, error: ownedQueuesError } = await supabase
         .from('queues')
-        .select('*');
+        .select('*')
+        .eq('owner_id', this.state.user.id);
 
-      if (queuesError) throw queuesError;
+      if (ownedQueuesError) throw ownedQueuesError;
+
+      const { data: membershipData, error: membershipError } = await supabase
+        .from('queue_members')
+        .select('queue_id, invited_by_email')
+        .eq('user_id', this.state.user.id)
+        .eq('status', 'active');
+
+      if (membershipError) throw membershipError;
+
+      const email = this.getAuthenticatedEmail();
+      const { data: emailMembershipData, error: emailMembershipError } = email
+        ? await supabase
+            .from('queue_members')
+            .select('queue_id, invited_by_email')
+            .eq('email', email.toLowerCase().trim())
+        : { data: [], error: null };
+
+      if (emailMembershipError) throw emailMembershipError;
+
+      const sharedQueueIds = Array.from(new Set([
+        ...(membershipData ?? []).map(row => row.queue_id),
+        ...(emailMembershipData ?? []).map(row => row.queue_id),
+      ]));
+
+      const { data: sharedQueuesData, error: sharedQueuesError } = sharedQueueIds.length > 0
+        ? await supabase
+            .from('queues')
+            .select('*')
+            .in('id', sharedQueueIds)
+        : { data: [], error: null };
+
+      if (sharedQueuesError) throw sharedQueuesError;
 
       const { data: tasksData, error: tasksError } = await supabase
         .from('tasks')
@@ -394,7 +441,19 @@ class AppStore {
         memberCounts[row.queue_id] = (memberCounts[row.queue_id] ?? 0) + 1;
       });
 
-      const assembledQueues: Queue[] = queuesData.map(queue => ({
+      const queueRows = [
+        ...(ownedQueuesData ?? []),
+        ...(sharedQueuesData ?? []),
+      ];
+
+      const uniqueQueues = Array.from(new Map(queueRows.map(queue => [queue.id, queue])).values());
+
+      const sharedByEmailMap: Record<string, string> = {};
+      [...(membershipData ?? []), ...(emailMembershipData ?? [])].forEach(row => {
+        if (row.invited_by_email) sharedByEmailMap[row.queue_id] = row.invited_by_email;
+      });
+
+      const assembledQueues: Queue[] = uniqueQueues.map(queue => ({
         id: queue.id,
         name: queue.name,
         color: queue.color,
@@ -403,6 +462,7 @@ class AppStore {
         createdAt: queue.created_at,
         ownerId: queue.owner_id,
         isShared: queue.owner_id !== this.state.user!.id,
+        sharedByEmail: sharedByEmailMap[queue.id],
         tasks: tasksData
           .filter(task => task.queue_id === queue.id)
           .map(task => ({

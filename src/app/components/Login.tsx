@@ -19,16 +19,19 @@ export function Login() {
 
   useEffect(() => {
     if (state.user) {
-      navigate('/');
+      window.location.replace(appUrl);
     }
-  }, [navigate, state.user]);
+  }, [appUrl, state.user]);
 
   const handleOAuth = async (provider: 'google' | 'github') => {
     setIsLoading(true);
     setError(null);
     const { error } = await supabase.auth.signInWithOAuth({
       provider,
-      options: { redirectTo: `${appUrl}/login` },
+      options: {
+        redirectTo: appUrl,
+        queryParams: provider === 'google' ? { prompt: 'select_account' } : undefined,
+      },
     });
     if (error) {
       setError(error.message);
@@ -49,7 +52,7 @@ export function Login() {
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        navigate('/'); // Redirect to the main app after successful login
+        window.location.replace(appUrl); // Redirect to the canonical app host after successful login
       }
     } catch (err: any) {
       setError(err.message);

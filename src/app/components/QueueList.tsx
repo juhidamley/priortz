@@ -22,7 +22,8 @@ export function QueueList() {
   const [palette, setPalette] = useState<string[]>(DEFAULT_TASK_COLORS);
   const [openPopoverIndex, setOpenPopoverIndex] = useState<number | null>(null);
 
-  const mainQueues = store.getMainQueues();
+  const mainQueues = store.getMainQueues().filter((queue) => !queue.isShared);
+  const sharedQueues = state.queues.filter((queue) => queue.isShared);
 
   const handleCreateQueue = async () => {
     if (newQueueName.trim()) {
@@ -138,58 +139,102 @@ export function QueueList() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto p-6">
-        {mainQueues.length === 0 ? (
+      <div className="flex-1 overflow-auto p-6 space-y-8">
+        {mainQueues.length === 0 && sharedQueues.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center text-gray-500">
             <Folder className="w-16 h-16 mb-4 opacity-50" />
             <p className="text-lg">No queues yet</p>
             <p className="text-sm">Create your first queue to get started</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {mainQueues.map((queue) => {
-              const collaboratorCount = state.queueMemberCounts?.[queue.id] ?? 0;
-              return (
-                <button
-                  key={queue.id}
-                  onClick={() => navigate(`/queue/${queue.id}`)}
-                  className={`group relative p-6 rounded-xl border-2 transition-all hover:shadow-lg text-left ${
-                    queue.isShared
-                      ? 'bg-blue-50/30 border-blue-200 hover:border-blue-300'
-                      : 'bg-white border-gray-200 hover:border-gray-300'
-                  }`}
-                >
-                  {queue.isShared && (
-                    <div className="absolute top-3 right-3">
-                      <Badge variant="outline" className="text-blue-600 border-blue-300 text-xs">
-                        Shared
-                      </Badge>
-                    </div>
-                  )}
-                  <div className="flex items-start gap-3">
-                    <div
-                      className="w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0"
-                      style={{ backgroundColor: queue.color + '20' }}
+          <>
+            {mainQueues.length > 0 && (
+              <div>
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">Your Queues</h2>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {mainQueues.map((queue) => {
+                    const collaboratorCount = state.queueMemberCounts?.[queue.id] ?? 0;
+                    return (
+                      <button
+                        key={queue.id}
+                        onClick={() => navigate(`/queue/${queue.id}`)}
+                        className="group relative p-6 rounded-xl border-2 transition-all hover:shadow-lg text-left bg-white border-gray-200 hover:border-gray-300"
+                      >
+                        <div className="flex items-start gap-3">
+                          <div
+                            className="w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0"
+                            style={{ backgroundColor: queue.color + '20' }}
+                          >
+                            <Folder className="w-6 h-6" style={{ color: queue.color }} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-medium truncate">{queue.name}</h3>
+                            <p className="text-sm text-gray-500 mt-1">
+                              {queue.tasks.length} {queue.tasks.length === 1 ? 'task' : 'tasks'}
+                            </p>
+                            {collaboratorCount > 0 && (
+                              <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
+                                <Users className="w-3 h-3" />
+                                {collaboratorCount} {collaboratorCount === 1 ? 'collaborator' : 'collaborators'}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div>
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">Shared with You</h2>
+              </div>
+              {sharedQueues.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-blue-200 bg-blue-50/20 p-6 text-sm text-blue-700">
+                  No shared queues yet. Once someone invites this account, the queue will appear here.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {sharedQueues.map((queue) => (
+                    <button
+                      key={queue.id}
+                      onClick={() => navigate(`/queue/${queue.id}`)}
+                      className="group relative p-6 rounded-xl border-2 transition-all hover:shadow-lg text-left bg-blue-50/30 border-blue-200 hover:border-blue-300"
                     >
-                      <Folder className="w-6 h-6" style={{ color: queue.color }} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-medium truncate">{queue.name}</h3>
-                      <p className="text-sm text-gray-500 mt-1">
-                        {queue.tasks.length} {queue.tasks.length === 1 ? 'task' : 'tasks'}
-                      </p>
-                      {!queue.isShared && collaboratorCount > 0 && (
-                        <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
-                          <Users className="w-3 h-3" />
-                          {collaboratorCount} {collaboratorCount === 1 ? 'collaborator' : 'collaborators'}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+                      <div className="absolute top-3 right-3">
+                        <Badge variant="outline" className="text-blue-600 border-blue-300 text-xs">
+                          Shared
+                        </Badge>
+                      </div>
+                      <div className="flex items-start gap-3">
+                        <div
+                          className="w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0"
+                          style={{ backgroundColor: queue.color + '20' }}
+                        >
+                          <Folder className="w-6 h-6" style={{ color: queue.color }} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-medium truncate">{queue.name}</h3>
+                          <p className="text-sm text-gray-500 mt-1">
+                            {queue.tasks.length} {queue.tasks.length === 1 ? 'task' : 'tasks'}
+                          </p>
+                          {queue.sharedByEmail && (
+                            <p className="text-xs text-blue-500 mt-1 truncate">
+                              from {queue.sharedByEmail}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
         )}
       </div>
     </div>
