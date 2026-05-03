@@ -4,26 +4,43 @@ export interface Task {
   id: string;
   title: string;
   description?: string;
-  subQueueId?: string; 
+  subQueueId?: string;
   createdAt: string;
-  color?: string; 
-  sort_order: number; // Add this line!
+  color?: string;
+  sort_order: number;
 }
 
 export interface Queue {
   id: string;
   name: string;
   color: string;
-  palette: string[]; // Added palette array (6 colors)
+  palette: string[];
   tasks: Task[];
-  parentTaskId?: string; 
+  parentTaskId?: string;
+  createdAt: string;
+  ownerId?: string;
+  isShared?: boolean;
+}
+
+export type MemberStatus = 'pending' | 'active';
+export type MemberRole = 'editor';
+
+export interface QueueMember {
+  id: string;
+  queueId: string;
+  invitedBy: string;
+  userId: string | null;
+  email: string;
+  role: MemberRole;
+  status: MemberStatus;
   createdAt: string;
 }
 
-// Update AppState to include the new auth properties
 export interface AppState {
   queues: Queue[];
   currentQueueId: string | null;
   user: User | null;
   isLoading: boolean;
+  queueMembers: QueueMember[];
+  queueMemberCounts: Record<string, number>;
 }

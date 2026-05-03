@@ -1,6 +1,5 @@
-import { Queue, Task, AppState } from './types';
+import { Queue, Task, AppState, MemberRole, MemberStatus } from './types';
 import { supabase } from '../../utils/supabase/client';
-import type { User } from '@supabase/supabase-js';
 
 const defaultPalette = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#a855f7'];
 
@@ -32,17 +31,24 @@ const initialQueues: Queue[] = [
 
 class AppStore {
   private state: AppState = {
-    queues: [], // We'll fetch these from the DB later
+    queues: [],
     currentQueueId: null,
     user: null,
     isLoading: true,
+    queueMembers: [],
+    queueMemberCounts: {},
   };
 
   private listeners: Set<() => void> = new Set();
+  private realtimeCleanup: (() => void) | undefined;
 
   async signOut() {
+    this.realtimeCleanup?.();
+    this.realtimeCleanup = undefined;
     await supabase.auth.signOut();
-    this.state.queues = []; // Clear local data on logout
+    this.state.queues = [];
+    this.state.queueMembers = [];
+    this.state.queueMemberCounts = {};
     this.notify();
   }
 
@@ -56,27 +62,27 @@ class AppStore {
   }
 
   private notify() {
-    this.state = { 
-      ...this.state, 
-      queues: [...this.state.queues] 
+    this.state = {
+      ...this.state,
+      queues: [...this.state.queues],
     };
-    
-    // Save to local storage if acting as a guest
+
     if (!this.state.user) {
       localStorage.setItem('prioritize_local_data', JSON.stringify(this.state.queues));
     }
-    
+
     this.listeners.forEach(listener => listener());
   }
 
   async initializeAuth() {
     const { data: { session } } = await supabase.auth.getSession();
     this.state.user = session?.user ?? null;
-    
+
     if (this.state.user) {
-      this.fetchQueues(); // Fetch from cloud
+      await this.resolvePendingInvites();
+      this.fetchQueues();
+      this.realtimeCleanup = this.subscribeToRealtime();
     } else {
-      // Fetch from local browser storage
       const saved = localStorage.getItem('prioritize_local_data');
       if (saved) {
         try { this.state.queues = JSON.parse(saved); } catch (e) {}
@@ -88,19 +94,98 @@ class AppStore {
     supabase.auth.onAuthStateChange((_event, session) => {
       const newUser = session?.user ?? null;
       if (this.state.user?.id !== newUser?.id) {
-         this.state.user = newUser;
-         if (newUser) this.fetchQueues();
-         else {
-           const saved = localStorage.getItem('prioritize_local_data');
-           this.state.queues = saved ? JSON.parse(saved) : [];
-           this.notify();
-         }
+        this.state.user = newUser;
+        if (newUser) {
+          this.resolvePendingInvites();
+          this.fetchQueues();
+          this.realtimeCleanup = this.subscribeToRealtime();
+        } else {
+          this.realtimeCleanup?.();
+          this.realtimeCleanup = undefined;
+          const saved = localStorage.getItem('prioritize_local_data');
+          this.state.queues = saved ? JSON.parse(saved) : [];
+          this.state.queueMembers = [];
+          this.state.queueMemberCounts = {};
+          this.notify();
+        }
       }
     });
   }
 
+  private async resolvePendingInvites() {
+    if (!this.state.user?.email) return;
+    const { error } = await supabase.rpc('resolve_pending_invites', {
+      p_user_id: this.state.user.id,
+      p_email: this.state.user.email.toLowerCase(),
+    });
+    if (error) console.error('Error resolving invites:', error);
+  }
+
+  async shareQueue(queueId: string, email: string): Promise<{ error: string | null }> {
+    if (!this.state.user) return { error: 'Not logged in' };
+
+    const { error } = await supabase.from('queue_members').insert({
+      queue_id: queueId,
+      invited_by: this.state.user.id,
+      email: email.toLowerCase().trim(),
+      role: 'editor',
+      status: 'pending',
+    });
+
+    if (error) {
+      if (error.code === '23505') return { error: 'This email has already been invited.' };
+      return { error: error.message };
+    }
+
+    await this.fetchQueueMembers(queueId);
+    return { error: null };
+  }
+
+  async fetchQueueMembers(queueId: string) {
+    if (!this.state.user) return;
+
+    const { data, error } = await supabase
+      .from('queue_members')
+      .select('*')
+      .eq('queue_id', queueId)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching members:', error);
+      return;
+    }
+
+    this.state.queueMembers = (data ?? []).map(m => ({
+      id: m.id,
+      queueId: m.queue_id,
+      invitedBy: m.invited_by,
+      userId: m.user_id,
+      email: m.email,
+      role: m.role as MemberRole,
+      status: m.status as MemberStatus,
+      createdAt: m.created_at,
+    }));
+    this.notify();
+  }
+
+  async removeQueueMember(memberId: string) {
+    if (!this.state.user) return;
+
+    const { error } = await supabase
+      .from('queue_members')
+      .delete()
+      .eq('id', memberId);
+
+    if (error) {
+      console.error('Error removing member:', error);
+      return;
+    }
+
+    this.state.queueMembers = this.state.queueMembers.filter(m => m.id !== memberId);
+    this.notify();
+  }
+
   async addQueue(name: string, color: string, palette: string[], parentTaskId?: string) {
-    // 1. LOCAL MODE
     if (!this.state.user) {
       const newQueue: Queue = {
         id: `local-queue-${Date.now()}`,
@@ -113,7 +198,6 @@ class AppStore {
       return newQueue;
     }
 
-    // 2. CLOUD MODE
     const { data, error } = await supabase.from('queues').insert({
       name, color, palette, owner_id: this.state.user.id, parent_task_id: parentTaskId || null,
     }).select().single();
@@ -139,7 +223,6 @@ class AppStore {
 
     const newSortOrder = queue.tasks.length > 0 ? queue.tasks[queue.tasks.length - 1].sort_order + 100 : 0;
 
-    // 1. LOCAL MODE
     if (!this.state.user) {
       const newTask: Task = {
         id: `local-task-${Date.now()}`,
@@ -150,12 +233,11 @@ class AppStore {
       return newTask;
     }
 
-    // 2. CLOUD MODE
     const { error } = await supabase.from('tasks').insert({
       queue_id: queueId, title, description, color: taskColor, sort_order: newSortOrder,
     });
     if (error) console.error('Error adding task:', error);
-    this.fetchQueues(); 
+    this.fetchQueues();
   }
 
   async updateQueue(queueId: string, updates: Partial<Queue>) {
@@ -169,8 +251,7 @@ class AppStore {
   }
 
   async deleteQueue(queueId: string) {
-    // Because we set ON DELETE CASCADE in the database, deleting a queue 
-    // will automatically delete all its tasks and share records!
+    // ON DELETE CASCADE automatically deletes tasks and queue_members rows
     const { error } = await supabase
       .from('queues')
       .delete()
@@ -236,8 +317,7 @@ class AppStore {
     newTasks[hoverIndex].sort_order = newSortOrder;
     this.notify();
 
-    // STOP HERE IF GUEST (Skip DB sync)
-    if (!this.state.user) return; 
+    if (!this.state.user) return;
 
     supabase.from('tasks').update({ sort_order: newSortOrder }).eq('id', removed.id).then(({ error }) => {
       if (error) console.error('Error syncing order:', error);
@@ -247,30 +327,27 @@ class AppStore {
   async createSubQueue(taskId: string, queueId: string) {
     const queue = this.getQueue(queueId);
     const task = queue?.tasks.find(t => t.id === taskId);
-    
+
     if (task && !task.subQueueId) {
-      // Create the new queue, linking it to the parent task
       const subQueue = await this.addQueue(
-        `${task.title} - Subtasks`, 
-        '#8b5cf6', 
-        queue?.palette || [], 
+        `${task.title} - Subtasks`,
+        '#8b5cf6',
+        queue?.palette || [],
         taskId
       );
-      
+
       if (subQueue) {
-        // 1. LOCAL MODE (Guest)
         if (!this.state.user) {
           task.subQueueId = subQueue.id;
           this.notify();
           return subQueue;
         }
 
-        // 2. CLOUD MODE (Logged In)
         await supabase
           .from('tasks')
           .update({ sub_queue_id: subQueue.id })
           .eq('id', taskId);
-          
+
         this.fetchQueues();
         return subQueue;
       }
@@ -280,10 +357,13 @@ class AppStore {
 
   setCurrentQueue(queueId: string | null) {
     this.state.currentQueueId = queueId;
+    this.state.queueMembers = [];
     this.notify();
+    if (queueId && this.state.user) {
+      this.fetchQueueMembers(queueId);
+    }
   }
 
-  // 1. Fetch all data from the cloud
   async fetchQueues() {
     if (!this.state.user) return;
 
@@ -291,22 +371,29 @@ class AppStore {
     this.notify();
 
     try {
-      // Fetch queues
       const { data: queuesData, error: queuesError } = await supabase
         .from('queues')
         .select('*');
-        
+
       if (queuesError) throw queuesError;
 
-      // Fetch tasks
       const { data: tasksData, error: tasksError } = await supabase
         .from('tasks')
         .select('*')
-        .order('sort_order', { ascending: true }); // Keep them in the right order
+        .order('sort_order', { ascending: true });
 
       if (tasksError) throw tasksError;
 
-      // Assemble the data: attach tasks to their respective queues
+      const { data: memberCountsData } = await supabase
+        .from('queue_members')
+        .select('queue_id')
+        .eq('status', 'active');
+
+      const memberCounts: Record<string, number> = {};
+      (memberCountsData ?? []).forEach(row => {
+        memberCounts[row.queue_id] = (memberCounts[row.queue_id] ?? 0) + 1;
+      });
+
       const assembledQueues: Queue[] = queuesData.map(queue => ({
         id: queue.id,
         name: queue.name,
@@ -314,6 +401,8 @@ class AppStore {
         palette: queue.palette,
         parentTaskId: queue.parent_task_id,
         createdAt: queue.created_at,
+        ownerId: queue.owner_id,
+        isShared: queue.owner_id !== this.state.user!.id,
         tasks: tasksData
           .filter(task => task.queue_id === queue.id)
           .map(task => ({
@@ -323,47 +412,39 @@ class AppStore {
             color: task.color,
             subQueueId: task.sub_queue_id,
             createdAt: task.created_at,
-            sort_order: task.sort_order, // <-- ADD THIS LINE
-          }))
+            sort_order: task.sort_order,
+          })),
       }));
 
       this.state.queues = assembledQueues;
+      this.state.queueMemberCounts = memberCounts;
     } catch (error) {
-      console.error("Error fetching data:", error);
+      console.error('Error fetching data:', error);
     } finally {
       this.state.isLoading = false;
       this.notify();
     }
   }
 
-  // 2. The Real-time Listener
   subscribeToRealtime() {
     if (!this.state.user) return;
 
-    // Create a real-time websocket connection to Supabase
     const subscription = supabase
       .channel('public-tasks-and-queues')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'tasks' },
-        (payload) => {
-          console.log('Task changed by another user!', payload);
-          // When a change is detected anywhere in the tasks table, 
-          // re-fetch the latest state to keep the UI perfectly in sync
-          this.fetchQueues();
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
+        this.fetchQueues();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'queues' }, () => {
+        this.fetchQueues();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'queue_members' }, () => {
+        this.fetchQueues();
+        if (this.state.currentQueueId) {
+          this.fetchQueueMembers(this.state.currentQueueId);
         }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'queues' },
-        (payload) => {
-          console.log('Queue changed by another user!', payload);
-          this.fetchQueues();
-        }
-      )
+      })
       .subscribe();
 
-    // Return a cleanup function
     return () => {
       supabase.removeChannel(subscription);
     };

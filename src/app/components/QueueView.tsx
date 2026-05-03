@@ -4,15 +4,17 @@ import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { TouchBackend } from 'react-dnd-touch-backend';
 import { MultiBackend, TouchTransition, MouseTransition } from 'react-dnd-multi-backend';
-import { ArrowLeft, Plus, Shuffle, Trash2, Settings } from 'lucide-react';
+import { ArrowLeft, Plus, Shuffle, Trash2, Settings, Share2 } from 'lucide-react';
 import { useStore } from '../hooks/useStore';
 import { TaskCard } from './TaskCard';
 import { SwipeView } from './SwipeView';
+import { ShareDialog } from './ShareDialog';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { Label } from './ui/label';
+import { Badge } from './ui/badge';
 import { Task } from '../types';
 
 const multiBackendOptions = {
@@ -25,11 +27,12 @@ const multiBackendOptions = {
 export function QueueView() {
   const { queueId } = useParams<{ queueId: string }>();
   const navigate = useNavigate();
-  const { store } = useStore();
-  
+  const { state, store } = useStore();
+
   const [isSwipeMode, setIsSwipeMode] = useState(false);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isShareDialogOpen, setIsShareDialogOpen] = useState(false);
   
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -144,7 +147,12 @@ export function QueueView() {
               <ArrowLeft className="w-4 h-4" />
             </Button>
             <div className="flex-1 min-w-0">
-              <h1 className="text-xl font-semibold truncate">{queue.name}</h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl font-semibold truncate">{queue.name}</h1>
+                {queue.isShared && (
+                  <Badge variant="outline" className="text-blue-600 border-blue-300 shrink-0">Shared</Badge>
+                )}
+              </div>
               <p className="text-sm text-gray-500">
                 {queue.tasks.length} {queue.tasks.length === 1 ? 'task' : 'tasks'}
               </p>
@@ -153,9 +161,19 @@ export function QueueView() {
               <Shuffle className="w-4 h-4 mr-2" />
               Prioritize
             </Button>
-            <Button variant="ghost" size="sm" onClick={handleDeleteQueue}>
-              <Trash2 className="w-4 h-4" />
-            </Button>
+            {state.user && (
+              <Button
+                variant="ghost" size="sm"
+                onClick={() => { store.setCurrentQueue(queue.id); setIsShareDialogOpen(true); }}
+              >
+                <Share2 className="w-4 h-4" />
+              </Button>
+            )}
+            {!queue.isShared && (
+              <Button variant="ghost" size="sm" onClick={handleDeleteQueue}>
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            )}
           </div>
         </div>
 
@@ -211,6 +229,18 @@ export function QueueView() {
             </div>
           </DialogContent>
         </Dialog>
+
+        {state.user && (
+          <ShareDialog
+            open={isShareDialogOpen}
+            onOpenChange={setIsShareDialogOpen}
+            queue={queue}
+            members={state.queueMembers}
+            currentUserId={state.user.id}
+            onInvite={(email) => store.shareQueue(queue.id, email)}
+            onRemove={(memberId) => store.removeQueueMember(memberId)}
+          />
+        )}
 
         {/* Edit Task Dialog */}
         <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>

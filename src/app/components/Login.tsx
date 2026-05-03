@@ -60,6 +60,10 @@ export function Login() {
           <p className="text-gray-500 text-sm mt-1">Manage your queues collaboratively</p>
         </div>
 
+        <p className="text-xs text-gray-400 text-center mb-4">
+          SSO will show <span className="font-mono">qxsyjqquhruqgiwrkppb.supabase.co</span> as the authorizing domain — that's us.
+        </p>
+
         <div className="space-y-3 mb-6">
           <Button
             type="button"

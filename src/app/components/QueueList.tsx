@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Plus, Folder } from 'lucide-react';
+import { Plus, Folder, Users } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { useStore } from '../hooks/useStore';
+import { Badge } from './ui/badge';
 import { ColorPicker } from './ColorPicker';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -44,6 +45,13 @@ export function QueueList() {
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-semibold">Queues</h1>
           <div className="flex items-center gap-3">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => window.location.href = 'https://juhi.studio'}
+            >
+              ← Back to juhi.studio
+            </Button>
             {!state.user ? (
               <Button variant="outline" size="sm" onClick={() => navigate('/login')}>
                 Sign in to sync
@@ -139,31 +147,48 @@ export function QueueList() {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {mainQueues.map((queue) => (
-              <button
-                key={queue.id}
-                onClick={() => navigate(`/queue/${queue.id}`)}
-                className="group relative p-6 bg-white rounded-xl border-2 border-gray-200 hover:border-gray-300 transition-all hover:shadow-lg text-left"
-              >
-                <div className="flex items-start gap-3">
-                  <div
-                    className="w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0"
-                    style={{ backgroundColor: queue.color + '20' }}
-                  >
-                    <Folder
-                      className="w-6 h-6"
-                      style={{ color: queue.color }}
-                    />
+            {mainQueues.map((queue) => {
+              const collaboratorCount = state.queueMemberCounts?.[queue.id] ?? 0;
+              return (
+                <button
+                  key={queue.id}
+                  onClick={() => navigate(`/queue/${queue.id}`)}
+                  className={`group relative p-6 rounded-xl border-2 transition-all hover:shadow-lg text-left ${
+                    queue.isShared
+                      ? 'bg-blue-50/30 border-blue-200 hover:border-blue-300'
+                      : 'bg-white border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  {queue.isShared && (
+                    <div className="absolute top-3 right-3">
+                      <Badge variant="outline" className="text-blue-600 border-blue-300 text-xs">
+                        Shared
+                      </Badge>
+                    </div>
+                  )}
+                  <div className="flex items-start gap-3">
+                    <div
+                      className="w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0"
+                      style={{ backgroundColor: queue.color + '20' }}
+                    >
+                      <Folder className="w-6 h-6" style={{ color: queue.color }} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-medium truncate">{queue.name}</h3>
+                      <p className="text-sm text-gray-500 mt-1">
+                        {queue.tasks.length} {queue.tasks.length === 1 ? 'task' : 'tasks'}
+                      </p>
+                      {!queue.isShared && collaboratorCount > 0 && (
+                        <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
+                          <Users className="w-3 h-3" />
+                          {collaboratorCount} {collaboratorCount === 1 ? 'collaborator' : 'collaborators'}
+                        </p>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-medium truncate">{queue.name}</h3>
-                    <p className="text-sm text-gray-500 mt-1">
-                      {queue.tasks.length} {queue.tasks.length === 1 ? 'task' : 'tasks'}
-                    </p>
-                  </div>
-                </div>
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
