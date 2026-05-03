@@ -67,4 +67,4 @@ export const DEFAULT_TASK_COLORS = COLOR_PALETTES.vibrant;
 export const DEFAULT_QUEUE_COLORS = [
   '#91aedc', '#71b47b', '#efe195', '#ea8080', 
   '#b09cde', '#e88bb9', '#76e2f6', '#b4d582'
-];
+]; 
