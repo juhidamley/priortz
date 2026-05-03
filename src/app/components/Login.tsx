@@ -1,25 +1,34 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { supabase } from '../../../utils/supabase/client';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Layers } from 'lucide-react';
 import { useNavigate } from 'react-router';
+import { useStore } from '../hooks/useStore';
 
 export function Login() {
   const navigate = useNavigate(); // Initialize hook
+  const { state } = useStore();
   const [isLoading, setIsLoading] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const appUrl = import.meta.env.PROD ? 'https://ptz.juhi.studio' : window.location.origin;
+
+  useEffect(() => {
+    if (state.user) {
+      navigate('/');
+    }
+  }, [navigate, state.user]);
 
   const handleOAuth = async (provider: 'google' | 'github') => {
     setIsLoading(true);
     setError(null);
     const { error } = await supabase.auth.signInWithOAuth({
       provider,
-      options: { redirectTo: window.location.origin },
+      options: { redirectTo: `${appUrl}/login` },
     });
     if (error) {
       setError(error.message);
